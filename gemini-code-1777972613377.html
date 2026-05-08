@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skyline City</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root { --sky: #0ea5e9; --fire: #ef4444; --amber: #fbbf24; }
+        body { background: #020617; color: #e2e8f0; font-family: 'Inter', sans-serif; overflow: hidden; height: 100vh; }
+        
+        /* Wetter-Overlays */
+        #weather-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 50; transition: background 2s; }
+        .weather-rain { background: rgba(30, 58, 138, 0.15); }
+        .weather-sun { background: rgba(253, 224, 71, 0.03); }
+        .weather-snow { background: rgba(255, 255, 255, 0.08); }
+
+        /* Homescreen mit Hintergrundbild */
+        #homescreen { 
+            position: fixed; 
+            inset: 0; 
+            z-index: 100; 
+            background: url('Gemini_Generated_Image_xgf7tvxgf7tvxgf7.png') no-repeat center center; 
+            background-size: cover; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+        }
+        
+        #homescreen::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: rgba(2, 6, 23, 0.5);
+            z-index: -1;
+        }
+
+        /* Spiel-Grid */
+        #game-grid { display: grid; gap: 4px; background: rgba(15, 23, 42, 0.9); padding: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); }
+        .grid-cell { background: rgba(30, 41, 59, 0.4); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; border-radius: 6px; transition: 0.2s; height: 55px; width: 55px; position: relative; }
+        .grid-cell:hover { transform: scale(1.05); background: rgba(51, 65, 85, 0.8); z-index: 10; border: 1px solid var(--sky); }
+        
+        /* Fortschrittsbalken beim Bauen */
+        .progress-wrap { position: absolute; bottom: 4px; left: 4px; right: 4px; height: 4px; background: rgba(0,0,0,0.5); border-radius: 2px; overflow: hidden; }
+        .progress-bar { height: 100%; background: var(--sky); width: 0%; }
+
+        .grid-cell.rathaus { background: #1e3a8a !important; border: 2px solid #3b82f6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.3); }
+        .grid-cell.ready { animation: glow 1.5s infinite; }
+        
+        @keyframes glow { 0%, 100% { box-shadow: 0 0 5px var(--sky); } 50% { box-shadow: 0 0 15px var(--sky); } }
+
+        /* UI Elemente */
+        .sidebar-btn { width: 100%; padding: 10px; border-radius: 8px; background: #1e293b; text-align: left; margin-bottom: 4px; border: 1px solid transparent; transition: 0.2s; font-size: 11px; }
+        .sidebar-btn.active { background: var(--sky); border-color: #38bdf8; }
+        .res-pill { background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); font-weight: 800; font-size: 11px; display: flex; align-items: center; gap: 4px; }
+    </style>
+</head>
+<body class="flex flex-col p-4 gap-4">
+
+<div id="weather-overlay"></div>
+
+<div id="homescreen">
+    <h1 class="text-7xl font-black mb-2 tracking-tighter text-white drop-shadow-2xl text-center">SKYLINE<span class="text-sky-400">CITY</span></h1>
+    <p class="text-sky-200 mb-8 uppercase tracking-widest text-sm font-bold drop-shadow-md text-center">Baue dein Imperium</p>
+    <button onclick="startGame()" class="px-16 py-5 bg-sky-600 hover:bg-sky-500 text-white font-black rounded-full transition transform hover:scale-110 shadow-[0_0_30px_rgba(14,165,233,0.5)]">STARTEN</button>
+</div>
+
+<header class="flex items-center justify-between bg-slate-900/90 p-4 rounded-2xl border border-white/5 shadow-xl z-50">
+    <div class="flex items-center gap-6">
+        <div>
+            <h1 class="text-2xl font-black leading-none uppercase">Skyline<span class="text-sky-500">City</span></h1>
+            <div id="weather-info" class="text-[10px] font-bold text-sky-400 mt-1 uppercase">☀️ Sonnig</div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <div class="res-pill text-amber-400">💰 <span id="res-g">0</span></div>
+            <div class="res-pill text-emerald-400">👥 <span id="res-p">0</span></div>
+            <div class="res-pill text-yellow-400">⚡ <span id="res-pow">0</span></div>
+        </div>
+    </div>
+    <div class="text-right">
+        <div class="text-[10px] font-bold">LVL <span id="city-lvl">1</span></div>
+        <div class="w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1">
+            <div id="xp-bar" class="h-full bg-sky-500 w-0 transition-all duration-500"></div>
+        </div>
+    </div>
+</header>
+
+<main class="flex flex-1 gap-4 overflow-hidden z-40">
+    <aside class="w-64 flex flex-col gap-2">
+        <div id="build-list" class="flex-1 overflow-y-auto bg-slate-900/40 p-2 rounded-xl"></div>
+        <button onclick="setTool('demo')" id="btn-demo" class="sidebar-btn text-red-400 border-red-900/30 font-bold text-center mt-2 uppercase">💥 Abriss-Modus</button>
+    </aside>
+
+    <section class="flex-1 bg-slate-950 rounded-[2rem] border-4 border-slate-900 flex items-center justify-center relative">
+        <div id="game-grid"></div>
+    </section>
+
+    <aside id="log" class="w-48 bg-slate-900/40 p-3 rounded-xl text-[9px] font-mono text-slate-400 overflow-y-auto border border-white/5"></aside>
+</main>
+
+<script>
+// Audio Setup
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSound(t) {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    if(t==='click'){ o.frequency.setValueAtTime(600,0); o.frequency.exponentialRampToValueAtTime(100,0.1); g.gain.setValueAtTime(0.1,0); o.start(); o.stop(0.1); }
+    if(t==='err'){ o.type='square'; o.frequency.setValueAtTime(100,0); g.gain.setValueAtTime(0.1,0); o.start(); o.stop(0.1); }
+}
+
+const BUILDINGS = {
+    road: { name:'Straße', emoji:'🛣️', cost:10, time:0, pop:0, prod:{}, req:0 },
+    house: { name:'Haus', emoji:'🏠', cost:100, time:12, pop:12, prod:{g:25}, req:0 },
+    well: { name:'Brunnen', emoji:'⛲', cost:80, time:6, pop:0, prod:{wat:20}, req:0 },
+    wind: { name:'Windrad', emoji:'🪁', cost:120, time:8, pop:0, prod:{pow:25}, req:0 },
+    factory: { name:'Fabrik', emoji:'🏭', cost:1200, time:40, pop:0, prod:{g:200}, req:2 }
+};
+
+let state = { 
+    res: { g: 800, p: 0, pow: 0, xp: 0, lvl: 1 }, 
+    grid: {}, 
+    selected: 'road', 
+    tool: 'build',
+    weather: 'sun'
+};
+
+function startGame() {
+    audioCtx.resume();
+    document.getElementById('homescreen').style.display = 'none';
+    // Start mit Rathaus
+    if(!state.grid["4,4"]) state.grid["4,4"] = { type: 'rathaus', ready: true, isRathaus: true };
+    renderGrid(); 
+    renderMenu();
+    setInterval(tick, 1000);
+}
+
+function tick() {
+    // Passives Einkommen durch Bevölkerung
+    state.res.g += Math.floor(state.res.p * 0.15);
+    
+    // Bau-Fortschritt berechnen
+    Object.keys(state.grid).forEach(k => {
+        let c = state.grid[k];
+        if(!c.ready && !c.isRathaus && BUILDINGS[c.type].time > 0) {
+            c.elap = (c.elap || 0) + 1;
+            updateProgressBar(k);
+            if(c.elap >= BUILDINGS[c.type].time) { 
+                c.ready = true; 
+                renderCell(k); 
+                addXP(25); 
+                log(`${BUILDINGS[c.type].name} fertiggestellt!`);
+            }
+        }
+    });
+    updateUI();
+}
+
+function handleCell(x, y) {
+    const key = `${x},${y}`, cell = state.grid[key];
+    if(cell?.isRathaus) return;
+    
+    // Abriss-Logik
+    if(state.tool === 'demo' && cell) { 
+        delete state.grid[key]; 
+        renderCell(key); 
+        log("Gebäude abgerissen.");
+        return; 
+    }
+
+    // Ernten oder Bauen
+    if(cell?.ready) {
+        if(BUILDINGS[cell.type].prod.g) {
+            state.res.g += BUILDINGS[cell.type].prod.g;
+            log(`+${BUILDINGS[cell.type].prod.g}💰 gesammelt.`);
+        }
+        cell.ready = false; 
+        cell.elap = 0; 
+        renderCell(key); 
+        playSound('click');
+    } else if(!cell && state.tool === 'build') {
+        const b = BUILDINGS[state.selected];
+        // KONTROLLE: Reicht das Geld?
+        if(state.res.g >= b.cost && state.res.lvl >= b.req) {
+            state.res.g -= b.cost; // GELD ABZIEHEN
+            state.grid[key] = { type: state.selected, elap: 0, ready: b.time === 0 };
+            renderCell(key); 
+            renderMenu(); 
+            playSound('click');
+        } else { 
+            playSound('err'); 
+            log("Nicht genug Geld oder Level zu niedrig!", "text-red-400");
+        }
+    }
+}
+
+function updateProgressBar(key) {
+    const el = document.getElementById(`prog-${key}`);
+    const c = state.grid[key];
+    if(el) el.style.width = (c.elap / BUILDINGS[c.type].time * 100) + "%";
+}
+
+function renderGrid() {
+    const g = document.getElementById('game-grid'); g.style.gridTemplateColumns = `repeat(9, 55px)`; g.innerHTML = '';
+    for(let y=0; y<9; y++) for(let x=0; x<9; x++) {
+        const key = `${x},${y}`, d = document.createElement('div');
+        d.className = 'grid-cell'; d.onclick = () => handleCell(x,y); d.id = `c-${key}`;
+        g.appendChild(d); if(state.grid[key]) renderCell(key);
+    }
+}
+
+function renderCell(key) {
+    const el = document.getElementById(`c-${key}`), c = state.grid[key];
+    if(!el) return;
+    if(c?.isRathaus) { el.innerHTML = '🏛️'; el.className = 'grid-cell rathaus'; return; }
+    el.innerHTML = c ? `<span class="text-xl">${BUILDINGS[c.type].emoji}</span>` : '';
+    if(c && !c.ready && BUILDINGS[c.type].time > 0) {
+        el.innerHTML += `<div class="progress-wrap"><div id="prog-${key}" class="progress-bar"></div></div>`;
+    }
+    el.className = `grid-cell ${c?.ready?'ready':''}`;
+}
+
+function renderMenu() {
+    const l = document.getElementById('build-list'); l.innerHTML = '';
+    Object.entries(BUILDINGS).forEach(([id, b]) => {
+        const locked = state.res.lvl < b.req;
+        const btn = document.createElement('button');
+        btn.className = `sidebar-btn ${state.selected === id && state.tool === 'build' ? 'active' : ''} ${locked?'opacity-30':''}`;
+        btn.onclick = () => { if(!locked) { state.selected = id; state.tool = 'build'; renderMenu(); } };
+        btn.innerHTML = `<div class="flex justify-between"><span>${b.emoji} ${b.name}</span><span>${locked?'🔒':'💰'+b.cost}</span></div>`;
+        l.appendChild(btn);
+    });
+}
+
+function updateUI() {
+    document.getElementById('res-g').innerText = Math.floor(state.res.g).toLocaleString();
+    document.getElementById('city-lvl').innerText = state.res.lvl;
+    document.getElementById('xp-bar').style.width = (state.res.xp / (state.res.lvl * 300) * 100) + "%";
+    
+    // Stats berechnen
+    let p=0, pow=0;
+    Object.values(state.grid).forEach(c => { 
+        if(c.ready && !c.isRathaus) { 
+            p += (BUILDINGS[c.type].pop || 0); 
+            pow += (BUILDINGS[c.type].prod.pow || 0); 
+        } 
+    });
+    state.res.p = p; 
+    state.res.pow = pow;
+    document.getElementById('res-p').innerText = p; 
+    document.getElementById('res-pow').innerText = pow;
+}
+
+function addXP(a) { 
+    state.res.xp += a; 
+    if(state.res.xp >= state.res.lvl * 300) { 
+        state.res.xp = 0; 
+        state.res.lvl++; 
+        log("LEVEL UP! Neue Gebäude verfügbar."); 
+        renderMenu(); 
+    } 
+}
+
+function setTool(t) { 
+    state.tool = (state.tool === t) ? 'build' : t; 
+    document.getElementById('btn-demo').style.background = state.tool === 'demo' ? '#ef4444' : ''; 
+    document.getElementById('btn-demo').style.color = state.tool === 'demo' ? 'white' : ''; 
+}
+
+function log(m, cl = "") { 
+    const l = document.getElementById('log'), d = document.createElement('div'); 
+    d.className = cl;
+    d.innerHTML = `> ${m}`; 
+    l.prepend(d); 
+}
+
+// Start
+renderGrid(); 
+renderMenu();
+</script>
+</body>
+</html>
